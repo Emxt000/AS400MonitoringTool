@@ -22,7 +22,6 @@ def get_logs_dir():
         base_dir = os.path.dirname(sys.executable)
     else:
         base_dir = os.path.dirname(os.path.abspath(__file__))
-        # If in 'ui' subdirectory, go up one level to root
         if os.path.basename(base_dir) == "ui":
             base_dir = os.path.dirname(base_dir)
             
@@ -38,14 +37,17 @@ class LogViewerWidget(QWidget):
     ]
 
     def _make_font(self, family="Segoe UI", point_size=9, weight=QFont.Weight.Normal):
+        """Creates a QFont safely preventing Point Size <= 0 warnings."""
         font = QFont(family)
-        font.setPointSize(point_size)
+        safe_size = max(1, int(point_size)) if isinstance(point_size, (int, float)) else 9
+        font.setPointSize(safe_size)
         font.setWeight(weight)
         return font
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.log_data_store = {}
+        self._processed_batches = set()
         self.active_lpars = []
 
         main_layout = QVBoxLayout(self)
@@ -137,20 +139,15 @@ class LogViewerWidget(QWidget):
 
         self.container_layout.addLayout(header_bar)
 
-        # -------------------------------------------------------------
-        # VERTICAL STACKED LAYOUT
-        # 1. ASP Usage Section
-        # -------------------------------------------------------------
+        # Layout Sections
         self.container_layout.addWidget(self._create_section_header("ASP Usage"))
         self.asp_table = self._build_matrix_table()
         self.container_layout.addWidget(self.asp_table)
 
-        # 2. CPU Usage Section
         self.container_layout.addWidget(self._create_section_header("CPU Usage"))
         self.cpu_table = self._build_matrix_table()
         self.container_layout.addWidget(self.cpu_table)
 
-        # 3. Real-time Refresh Log Stream Section
         self.container_layout.addWidget(self._create_section_header("Real-time Refresh Log Stream"))
         self.stream_table = QTableWidget()
         self.stream_table.setColumnCount(8)
@@ -167,7 +164,7 @@ class LogViewerWidget(QWidget):
         scroll.setWidget(container)
         main_layout.addWidget(scroll)
 
-        # File watcher & reload debouncing timer setup
+        # File watcher & reload timer setup
         self.reload_timer = QTimer(self)
         self.reload_timer.setSingleShot(True)
         self.reload_timer.setInterval(1000)
@@ -181,18 +178,15 @@ class LogViewerWidget(QWidget):
         self.load_log_history()
 
     def _setup_file_watcher(self):
-        """Monitors log directory for changes."""
         logs_dir = get_logs_dir()
         if os.path.exists(logs_dir) and logs_dir not in self.file_watcher.directories():
             self.file_watcher.addPath(logs_dir)
 
     def _on_logs_changed(self, path):
-        """Triggered when a file or folder is updated."""
         self._setup_file_watcher()
         self.reload_timer.start()
 
     def _update_last_refresh_timestamp(self):
-        """Updates the timestamp label to reflect current time."""
         now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         self.last_refresh_label.setText(f"Last updated: {now_str}")
 
@@ -249,7 +243,6 @@ class LogViewerWidget(QWidget):
         """)
 
     def _update_table_heights(self):
-        """Calculates dynamic height for matrix tables based on active LPAR count."""
         row_count = len(self.active_lpars)
         header_height = 28
         row_height = 32
@@ -269,9 +262,8 @@ class LogViewerWidget(QWidget):
             self.active_lpars = sorted(list(SERVER_CONFIGS.keys()))
 
         current_selection = self.date_combo.currentText()
-        self.log_data_store = {}
-        
         target_dir = get_logs_dir()
+
         if os.path.exists(target_dir):
             files = [f for f in os.listdir(target_dir) if f.endswith(".json") and f.startswith("lpar_history_")]
             files.sort()
@@ -300,14 +292,17 @@ class LogViewerWidget(QWidget):
                         batches.append((data.get("timestamp", ""), data.get("records", [])))
 
                     for ts, records in batches:
+                        if not ts:
+                            continue
+
                         date_key = ts[:10] if len(ts) >= 10 else datetime.date.today().strftime("%Y-%m-%d")
                         if date_key not in self.log_data_store:
                             self.log_data_store[date_key] = []
 
-                        # Append records chronologically without truncating past hours
-                        existing_timestamps = {b[0] for b in self.log_data_store[date_key]}
-                        if ts not in existing_timestamps:
+                        batch_signature = f"{date_key}_{ts}"
+                        if batch_signature not in self._processed_batches:
                             self.log_data_store[date_key].append((ts, records))
+                            self._processed_batches.add(batch_signature)
 
                 except Exception as e:
                     print(f"Error loading log file {file_name}: {e}")
@@ -336,7 +331,6 @@ class LogViewerWidget(QWidget):
             selected_date = datetime.date.today().strftime("%Y-%m-%d")
 
         self.title_label.setText(f"IBM i LPAR Daily Summary ({selected_date})")
-
         self._update_table_heights()
 
         if not self.active_lpars:
@@ -350,7 +344,6 @@ class LogViewerWidget(QWidget):
 
         day_batches = self.log_data_store.get(selected_date, [])
 
-        # Process batches chronologically to fill all available hourly slots
         for ts, records in day_batches:
             if not ts or len(ts) < 13:
                 continue
@@ -516,7 +509,6 @@ class LogViewerWidget(QWidget):
         return item
 
     def _format_subsystems_list(self, subs_list):
-        """Safely formats lists containing either strings, dicts, or stringified dicts."""
         if not subs_list:
             return "None"
         if isinstance(subs_list, str):
@@ -781,6 +773,7 @@ class LogViewerWidget(QWidget):
 
     def clear_logs(self):
         self.log_data_store.clear()
+        self._processed_batches.clear()
         self.date_combo.blockSignals(True)
         self.date_combo.clear()
         self.date_combo.blockSignals(False)
