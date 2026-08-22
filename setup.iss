@@ -20,9 +20,9 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 Source: "main.dist\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
-Name: "{group}\IBM i Dashboard"; Filename: "{app}\main.exe"; IconFilename: "{app}\logo.ico"
+Name: "{group}\IBM i Dashboard"; Filename: "{app}\main.exe"; IconFilename: "logo.ico"
 Name: "{group}\Uninstall IBM i Dashboard"; Filename: "{uninstallexe}"
-Name: "{autodesktop}\IBM i Dashboard"; Filename: "{app}\main.exe"; Tasks: desktopicon; IconFilename: "{app}\logo.ico"
+Name: "{autodesktop}\IBM i Dashboard"; Filename: "{app}\main.exe"; Tasks: desktopicon; IconFilename: "logo.ico"
 
 [Run]
 Filename: "{app}\main.exe"; Description: "{cm:LaunchProgram,IBM i Dashboard}"; Flags: nowait postinstall skipifsilent

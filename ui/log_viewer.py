@@ -290,19 +290,24 @@ class LogViewerWidget(QWidget):
                         data = json.load(f)
 
                     batches = []
-                    if isinstance(data, list) and len(data) > 0 and isinstance(data[0], dict) and "records" in data[0]:
-                        for batch in data:
-                            batches.append((batch.get("timestamp", ""), batch.get("records", [])))
+                    if isinstance(data, list):
+                        for item in data:
+                            if isinstance(item, dict) and "records" in item:
+                                batches.append((item.get("timestamp", ""), item.get("records", [])))
+                            elif isinstance(item, dict):
+                                batches.append((item.get("timestamp", ""), [item]))
                     elif isinstance(data, dict):
                         batches.append((data.get("timestamp", ""), data.get("records", [])))
-                    elif isinstance(data, list):
-                        batches.append(("", data))
 
                     for ts, records in batches:
                         date_key = ts[:10] if len(ts) >= 10 else datetime.date.today().strftime("%Y-%m-%d")
                         if date_key not in self.log_data_store:
                             self.log_data_store[date_key] = []
-                        self.log_data_store[date_key].append((ts, records))
+
+                        # Append records chronologically without truncating past hours
+                        existing_timestamps = {b[0] for b in self.log_data_store[date_key]}
+                        if ts not in existing_timestamps:
+                            self.log_data_store[date_key].append((ts, records))
 
                 except Exception as e:
                     print(f"Error loading log file {file_name}: {e}")
@@ -345,6 +350,7 @@ class LogViewerWidget(QWidget):
 
         day_batches = self.log_data_store.get(selected_date, [])
 
+        # Process batches chronologically to fill all available hourly slots
         for ts, records in day_batches:
             if not ts or len(ts) < 13:
                 continue
