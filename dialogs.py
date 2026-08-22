@@ -5,15 +5,20 @@ from PyQt6.QtWidgets import (
     QLineEdit, QPushButton, QTextEdit, QComboBox,
     QTableWidget, QTableWidgetItem, QHeaderView
 )
-from config import SERVER_CONFIGS, EXPECTED_SUBSYSTEMS
+from config import (
+    SERVER_CONFIGS, 
+    EXPECTED_SUBSYSTEMS, 
+    EXPECTED_PORTS, 
+    save_all_configs
+)
 
 
 class LparSettingsDialog(QDialog):
-    """Modal dialog allowing users to dynamically configure LPAR IPs, Database names, and Expected Subsystems."""
+    """Modal dialog allowing users to dynamically configure LPAR IPs, Database names, Subsystems, and Network Ports."""
     def __init__(self, current_configs, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("Configure LPAR Connections & Expected Subsystems")
-        self.resize(800, 400)
+        self.setWindowTitle("Configure LPAR Connections, Subsystems & Ports")
+        self.resize(1000, 450)
         self.configs = current_configs.copy()
 
         self.setStyleSheet("""
@@ -51,14 +56,14 @@ class LparSettingsDialog(QDialog):
 
         layout = QVBoxLayout(self)
 
-        lbl = QLabel("Manage Server Connections & Expected Subsystems:")
+        lbl = QLabel("Manage Server Connections, Expected Subsystems & Monitored Ports:")
         layout.addWidget(lbl)
 
-        # Table View: Server Name, IP / Host, Database Name, Expected Subsystems
+        # Table View: Server Name, IP / Host, Database Name, Expected Subsystems, Expected Ports
         self.table = QTableWidget()
-        self.table.setColumnCount(4)
+        self.table.setColumnCount(5)
         self.table.setHorizontalHeaderLabels([
-            "Server Name", "IP / Hostname", "Database Name", "Expected Subsystems (Comma Separated)"
+            "Server Name", "IP / Hostname", "Database Name", "Expected Subsystems", "Monitored Ports (Port:Name)"
         ])
         
         header = self.table.horizontalHeader()
@@ -66,6 +71,7 @@ class LparSettingsDialog(QDialog):
         header.setSectionResizeMode(1, QHeaderView.ResizeMode.Interactive)
         header.setSectionResizeMode(2, QHeaderView.ResizeMode.Interactive)
         header.setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
+        header.setSectionResizeMode(4, QHeaderView.ResizeMode.Stretch)
         
         self.table.verticalHeader().setVisible(False)
         
@@ -99,10 +105,20 @@ class LparSettingsDialog(QDialog):
             subsystems = EXPECTED_SUBSYSTEMS.get(srv_name, [])
             subsystems_str = ", ".join(subsystems)
 
+            ports_list = EXPECTED_PORTS.get(srv_name, [])
+            ports_str_items = []
+            for p in ports_list:
+                if isinstance(p, dict):
+                    ports_str_items.append(f"{p.get('port')}:{p.get('name')}")
+                else:
+                    ports_str_items.append(str(p))
+            ports_str = ", ".join(ports_str_items)
+
             self.table.setItem(row, 0, QTableWidgetItem(srv_name))
             self.table.setItem(row, 1, QTableWidgetItem(host))
             self.table.setItem(row, 2, QTableWidgetItem(db))
             self.table.setItem(row, 3, QTableWidgetItem(subsystems_str))
+            self.table.setItem(row, 4, QTableWidgetItem(ports_str))
 
     def add_row(self):
         row = self.table.rowCount()
@@ -111,6 +127,7 @@ class LparSettingsDialog(QDialog):
         self.table.setItem(row, 1, QTableWidgetItem("192.168.1.1"))
         self.table.setItem(row, 2, QTableWidgetItem("*LOCAL"))
         self.table.setItem(row, 3, QTableWidgetItem("QINTER, QBATCH, QSERVER, QSYSWRK"))
+        self.table.setItem(row, 4, QTableWidgetItem("21:FTP, 22:SSH, 8471:DDM"))
 
     def remove_row(self):
         current_row = self.table.currentRow()
@@ -120,32 +137,65 @@ class LparSettingsDialog(QDialog):
     def save_and_close(self):
         new_configs = {}
         new_subsystems = {}
+        new_ports = {}
 
         for row in range(self.table.rowCount()):
             srv_item = self.table.item(row, 0)
             host_item = self.table.item(row, 1)
             db_item = self.table.item(row, 2)
             sub_item = self.table.item(row, 3)
+            port_item = self.table.item(row, 4)
 
             if srv_item and host_item and srv_item.text().strip():
                 srv_name = srv_item.text().strip().upper()
                 host_val = host_item.text().strip()
                 db_val = db_item.text().strip() if db_item and db_item.text().strip() else "*LOCAL"
 
+                # Parse Subsystems
                 sub_text = sub_item.text().strip() if sub_item else ""
                 parsed_subsystems = [s.strip().upper() for s in sub_text.split(",") if s.strip()]
+
+                # Parse Ports
+                port_text = port_item.text().strip() if port_item else ""
+                parsed_ports = []
+                for p_entry in port_text.split(","):
+                    p_entry = p_entry.strip()
+                    if not p_entry:
+                        continue
+                    if ":" in p_entry:
+                        parts = p_entry.split(":", 1)
+                        if parts[0].strip().isdigit():
+                            parsed_ports.append({
+                                "port": int(parts[0].strip()),
+                                "name": parts[1].strip().upper()
+                            })
+                    elif p_entry.isdigit():
+                        parsed_ports.append({
+                            "port": int(p_entry),
+                            "name": f"PORT_{p_entry}"
+                        })
 
                 new_configs[srv_name] = {
                     "host": host_val,
                     "db": db_val
                 }
                 new_subsystems[srv_name] = parsed_subsystems
+                new_ports[srv_name] = parsed_ports
 
         self.configs = new_configs
 
-        # Update runtime reference
+        # 1. Update in-memory references
+        SERVER_CONFIGS.clear()
+        SERVER_CONFIGS.update(new_configs)
+
         EXPECTED_SUBSYSTEMS.clear()
         EXPECTED_SUBSYSTEMS.update(new_subsystems)
+
+        EXPECTED_PORTS.clear()
+        EXPECTED_PORTS.update(new_ports)
+
+        # 2. Persist to config.json file on disk
+        save_all_configs(new_configs, new_subsystems, new_ports)
 
         self.accept()
 

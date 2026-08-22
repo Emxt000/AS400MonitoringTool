@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import pyodbc
 from PyQt6.QtCore import QThread, pyqtSignal
-from config import SERVER_CONFIGS, MONITORED_PORTS
+from config import SERVER_CONFIGS, MONITORED_PORTS, EXPECTED_PORTS
 
 
 def get_logs_dir():
@@ -58,7 +58,11 @@ def save_metrics_to_log(results, server_configs=None):
     for sys_info in results:
         down_services = []
         if sys_info.get("ports"):
-            down_services = [p["service"] for p in sys_info["ports"] if not p.get("is_up")]
+            down_services = [
+                p.get("name") or p.get("service") 
+                for p in sys_info["ports"] 
+                if not p.get("is_up")
+            ]
 
         services_down_val = down_services if down_services else "None"
         server_name = sys_info.get("server")
@@ -210,17 +214,27 @@ class WorkerThread(QThread):
                     """
                 )
                 active_ports = {
-                    int(r[0]) for r in cursor.fetchall() if r[0] is not None
+                    int(r[0]) for r in cursor.fetchall() if r[0] is not None and str(r[0]).isdigit()
                 }
 
-                for port, service in MONITORED_PORTS.items():
-                    port_status_list.append(
-                        {
-                            "port": port,
-                            "service": service,
-                            "is_up": port in active_ports,
-                        }
-                    )
+                # Retrieve server-specific expected ports from EXPECTED_PORTS dict
+                target_ports = EXPECTED_PORTS.get(server, [])
+                
+                # Fallback to global MONITORED_PORTS if server-specific entry is absent
+                if not target_ports and isinstance(MONITORED_PORTS, dict):
+                    target_ports = [{"port": p, "name": s} for p, s in MONITORED_PORTS.items()]
+
+                for p_info in target_ports:
+                    p_num = p_info.get("port") if isinstance(p_info, dict) else p_info
+                    p_name = p_info.get("name", f"PORT_{p_num}") if isinstance(p_info, dict) else str(p_num)
+                    
+                    if str(p_num).isdigit():
+                        port_status_list.append({
+                            "port": int(p_num),
+                            "name": p_name,
+                            "service": p_name,
+                            "is_up": int(p_num) in active_ports
+                        })
             except Exception:
                 pass
 
