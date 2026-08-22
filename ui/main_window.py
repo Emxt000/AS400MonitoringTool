@@ -5,8 +5,8 @@ import os
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from PyQt6.QtCore import Qt, QTimer
-from PyQt6.QtGui import QColor, QFont, QCursor, QIcon, QPixmap
+from PyQt6.QtCore import Qt, QTimer, QThreadPool
+from PyQt6.QtGui import QColor, QFont, QCursor, QIcon
 from PyQt6.QtWidgets import (
     QMainWindow, QTabWidget, QWidget, QVBoxLayout, 
     QHBoxLayout, QGroupBox, QLabel, QLineEdit, QPushButton, 
@@ -14,7 +14,7 @@ from PyQt6.QtWidgets import (
     QDialog, QTableWidget, QTableWidgetItem, QHeaderView, QAbstractItemView, QApplication
 )
 
-from worker import WorkerThread
+from worker import SingleLparRunnable
 from ui.log_viewer import LogViewerWidget
 from ui.widgets import RefreshStatusWidget, StatusBadgesWidget, SubsystemGridWidget
 from dialogs import LparSettingsDialog
@@ -484,6 +484,11 @@ class IBMiDashboard(QMainWindow):
         self.is_monitoring = False
         self.card_widgets = {}
         self.active_server_configs = dict(SERVER_CONFIGS)
+        self.latest_results_cache = {}
+
+        # Set up Thread Pool for concurrent queries
+        self.thread_pool = QThreadPool.globalInstance()
+        self.thread_pool.setMaxThreadCount(16)
 
         self.tabs = QTabWidget()
         self.setCentralWidget(self.tabs)
@@ -757,27 +762,42 @@ class IBMiDashboard(QMainWindow):
         self.status_label.setText("Status: Authenticating & fetching metrics concurrently...")
         self.status_label.setStyleSheet("color: #8b949e; font-size: 11px; background-color: transparent;")
 
-        self.thread = WorkerThread(username, password, server_configs=self.active_server_configs)
-        self.thread.data_fetched.connect(self.update_cards)
-        self.thread.start()
+        self.completed_threads_count = 0
+        self.pending_lpar_count = len(self.active_server_configs)
 
-    def update_cards(self, data):
-        self.global_alerts.update_summary(data)
+        # Dispatch each LPAR query concurrently into the thread pool
+        for server_name, cfg in self.active_server_configs.items():
+            runnable = SingleLparRunnable(server_name, cfg, username, password)
+            runnable.signals.server_fetched.connect(self.on_single_lpar_fetched)
+            self.thread_pool.start(runnable)
+
+    def on_single_lpar_fetched(self, lpar_data):
+        """Fired in real-time as soon as an individual LPAR thread completes."""
+        server_name = lpar_data["server"]
+        self.latest_results_cache[server_name] = lpar_data
+
+        # Instantly update card widget for the specific LPAR
+        if server_name in self.card_widgets:
+            self.card_widgets[server_name].update_data(lpar_data)
+
+        # Recalculate global alert summaries based on all currently known values
+        self.global_alerts.update_summary(list(self.latest_results_cache.values()))
+
+        self.completed_threads_count += 1
+
+        # Check if all server tasks in this polling cycle have completed
+        if self.completed_threads_count >= self.pending_lpar_count:
+            self.on_all_lpars_finished()
+
+    def on_all_lpars_finished(self):
+        """Called once all LPAR queries in the active polling cycle complete."""
         self.log_viewer_widget.load_log_history()
-
-        auth_error_systems = []
-
-        for sys_info in data:
-            server_name = sys_info["server"]
-            status = sys_info["status"]
-
-            if status == "AUTH_ERROR":
-                auth_error_systems.append(server_name)
-
-            if server_name in self.card_widgets:
-                self.card_widgets[server_name].update_data(sys_info)
-
         self.refresh_widget.update_timestamp()
+
+        auth_error_systems = [
+            srv for srv, data in self.latest_results_cache.items() 
+            if data.get("status") == "AUTH_ERROR"
+        ]
 
         if auth_error_systems:
             err_servers_str = ", ".join(auth_error_systems)

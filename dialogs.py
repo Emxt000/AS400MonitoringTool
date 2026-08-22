@@ -217,7 +217,8 @@ class SSHRunnerThread(QThread):
             ssh.connect(self.host, port=22, username=self.username, password=self.password, timeout=5)
             
             full_cmd = f"system \"{self.command}\""
-            stdin, stdout, stderr = ssh.exec_command(full_cmd)
+            # Explicitly set get_pty=False to disable terminal allocation
+            stdin, stdout, stderr = ssh.exec_command(full_cmd, get_pty=False)
             
             out = stdout.read().decode('utf-8')
             err = stderr.read().decode('utf-8')

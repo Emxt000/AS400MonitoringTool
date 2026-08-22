@@ -3,16 +3,14 @@ import sys
 import json
 import re
 from datetime import datetime, timedelta
-from concurrent.futures import ThreadPoolExecutor, as_completed
 import pyodbc
-from PyQt6.QtCore import QThread, pyqtSignal
+from PyQt6.QtCore import QRunnable, QObject, pyqtSignal, QThreadPool
 from config import SERVER_CONFIGS, MONITORED_PORTS, EXPECTED_PORTS
 
 
 def get_logs_dir():
     """Returns absolute path to 'logs' directory in LocalAppData when frozen, or local script path when running raw."""
     if getattr(sys, 'frozen', False):
-        # Redirect log directory to %LOCALAPPDATA%\IBMi_Dashboard\logs to avoid Program Files permissions errors
         base_dir = os.path.join(os.environ.get("LOCALAPPDATA", os.path.expanduser("~")), "IBMi_Dashboard")
     else:
         base_dir = os.path.dirname(os.path.abspath(__file__))
@@ -40,13 +38,12 @@ def cleanup_old_logs(days_to_keep=30):
                 if file_date < cutoff_date:
                     file_path = os.path.join(logs_dir, filename)
                     os.remove(file_path)
-                    print(f"Cleaned up old log file: {filename}")
             except Exception as e:
                 print(f"Error parsing/deleting {filename}: {e}")
 
 
-def save_metrics_to_log(results, server_configs=None):
-    """Appends fetched LPAR ODBC metrics to a daily JSON file inside the 'logs' folder."""
+def save_single_lpar_log(sys_info, server_configs=None):
+    """Appends a single LPAR result directly to the daily JSON history file upon worker completion."""
     logs_dir = get_logs_dir()
     now = datetime.now()
     date_str = now.strftime("%Y-%m-%d")
@@ -55,39 +52,37 @@ def save_metrics_to_log(results, server_configs=None):
 
     configs = server_configs or SERVER_CONFIGS
 
-    formatted_records = []
-    for sys_info in results:
-        down_services = []
-        if sys_info.get("ports"):
-            down_services = [
-                p.get("name") or p.get("service") 
-                for p in sys_info["ports"] 
-                if not p.get("is_up")
-            ]
+    down_services = []
+    if sys_info.get("ports"):
+        down_services = [
+            p.get("name") or p.get("service") 
+            for p in sys_info["ports"] 
+            if not p.get("is_up")
+        ]
 
-        services_down_val = down_services if down_services else "None"
-        server_name = sys_info.get("server")
-        
-        cfg = configs.get(server_name, {})
-        ip_addr = cfg.get("host", "N/A") if isinstance(cfg, dict) else str(cfg)
+    services_down_val = down_services if down_services else "None"
+    server_name = sys_info.get("server")
+    
+    cfg = configs.get(server_name, {})
+    ip_addr = cfg.get("host", "N/A") if isinstance(cfg, dict) else str(cfg)
 
-        formatted_records.append({
-            "timestamp": timestamp_str,
-            "lpar": server_name,
-            "server": server_name,
-            "ip": ip_addr,
-            "cpu": sys_info.get("cpu", 0.0),
-            "asp": sys_info.get("asp", 0.0),
-            "jobs": sys_info.get("jobs", 0),
-            "status": sys_info.get("status", "OFFLINE"),
-            "subsystems_summary": f"{len(sys_info.get('subsystems', []))} Active",
-            "subsystems_detail": sys_info.get("subsystems", []),
-            "services_down": services_down_val
-        })
+    record = {
+        "timestamp": timestamp_str,
+        "lpar": server_name,
+        "server": server_name,
+        "ip": ip_addr,
+        "cpu": sys_info.get("cpu", 0.0),
+        "asp": sys_info.get("asp", 0.0),
+        "jobs": sys_info.get("jobs", 0),
+        "status": sys_info.get("status", "OFFLINE"),
+        "subsystems_summary": f"{len(sys_info.get('subsystems', []))} Active",
+        "subsystems_detail": sys_info.get("subsystems", []),
+        "services_down": services_down_val
+    }
 
     entry = {
         "timestamp": timestamp_str,
-        "records": formatted_records
+        "records": [record]
     }
 
     existing_data = []
@@ -111,19 +106,25 @@ def save_metrics_to_log(results, server_configs=None):
     cleanup_old_logs(days_to_keep=30)
 
 
-class WorkerThread(QThread):
-    data_fetched = pyqtSignal(list)
+class LparWorkerSignals(QObject):
+    """Signals for communicating LPAR query execution results safely to GUI widgets."""
+    server_fetched = pyqtSignal(dict)
 
-    def __init__(self, username, password, server_configs=None):
+
+class SingleLparRunnable(QRunnable):
+    """Concurrent worker task for fetching metrics from a single LPAR connection."""
+    def __init__(self, server, cfg, username, password):
         super().__init__()
+        self.server = server
+        self.cfg = cfg
         self.username = username
         self.password = password
-        self.server_configs = server_configs or SERVER_CONFIGS
+        self.signals = LparWorkerSignals()
 
-    def fetch_single_server(self, server, cfg):
+    def run(self):
         conn = None
-        host = cfg.get("host", "") if isinstance(cfg, dict) else str(cfg)
-        db = cfg.get("db", "*LOCAL") if isinstance(cfg, dict) else "*LOCAL"
+        host = self.cfg.get("host", "") if isinstance(self.cfg, dict) else str(self.cfg)
+        db = self.cfg.get("db", "*LOCAL") if isinstance(self.cfg, dict) else "*LOCAL"
 
         try:
             conn = pyodbc.connect(
@@ -218,10 +219,7 @@ class WorkerThread(QThread):
                     int(r[0]) for r in cursor.fetchall() if r[0] is not None and str(r[0]).isdigit()
                 }
 
-                # Retrieve server-specific expected ports from EXPECTED_PORTS dict
-                target_ports = EXPECTED_PORTS.get(server, [])
-                
-                # Fallback to global MONITORED_PORTS if server-specific entry is absent
+                target_ports = EXPECTED_PORTS.get(self.server, [])
                 if not target_ports and isinstance(MONITORED_PORTS, dict):
                     target_ports = [{"port": p, "name": s} for p, s in MONITORED_PORTS.items()]
 
@@ -239,8 +237,8 @@ class WorkerThread(QThread):
             except Exception:
                 pass
 
-            return {
-                "server": server,
+            result = {
+                "server": self.server,
                 "status": "ONLINE",
                 "cpu": cpu_util,
                 "asp": asp_used,
@@ -252,27 +250,27 @@ class WorkerThread(QThread):
         except Exception as e:
             err_msg = str(e)
             if any(k in err_msg.lower() for k in ["28000", "cwbsy0011", "disabled", "password", "authentication"]):
-                return {
-                    "server": server,
+                result = {
+                    "server": self.server,
                     "status": "AUTH_ERROR",
-                    "error": f"[{server}] {err_msg}",
+                    "error": f"[{self.server}] {err_msg}",
                     "cpu": 0.0,
                     "asp": 0.0,
                     "jobs": 0,
                     "subsystems": [],
                     "ports": [],
                 }
-
-            return {
-                "server": server,
-                "status": "OFFLINE",
-                "error": f"[{server}] {err_msg}",
-                "cpu": 0.0,
-                "asp": 0.0,
-                "jobs": 0,
-                "subsystems": [],
-                "ports": [],
-            }
+            else:
+                result = {
+                    "server": self.server,
+                    "status": "OFFLINE",
+                    "error": f"[{self.server}] {err_msg}",
+                    "cpu": 0.0,
+                    "asp": 0.0,
+                    "jobs": 0,
+                    "subsystems": [],
+                    "ports": [],
+                }
         finally:
             if conn:
                 try:
@@ -280,31 +278,5 @@ class WorkerThread(QThread):
                 except Exception:
                     pass
 
-    def run(self):
-        results = []
-        with ThreadPoolExecutor(max_workers=max(1, len(self.server_configs))) as executor:
-            future_to_server = {
-                executor.submit(self.fetch_single_server, server, cfg): server
-                for server, cfg in self.server_configs.items()
-            }
-            for future in as_completed(future_to_server):
-                try:
-                    results.append(future.result())
-                except Exception as exc:
-                    server_name = future_to_server[future]
-                    results.append({
-                        "server": server_name,
-                        "status": "OFFLINE",
-                        "error": str(exc),
-                        "cpu": 0.0,
-                        "asp": 0.0,
-                        "jobs": 0,
-                        "subsystems": [],
-                        "ports": []
-                    })
-
-        order = list(self.server_configs.keys())
-        results.sort(key=lambda x: order.index(x["server"]) if x["server"] in order else 99)
-
-        save_metrics_to_log(results, self.server_configs)
-        self.data_fetched.emit(results)
+        save_single_lpar_log(result)
+        self.signals.server_fetched.emit(result)
