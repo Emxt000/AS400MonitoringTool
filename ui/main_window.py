@@ -487,12 +487,18 @@ class GlobalAlertsWidget(QGroupBox):
 
         self.sub_status_lbl.setText(f"All Subsystems Active ({total_online}/{len(data_list)})")
 
+"""For Logo/Icon"""
+def resource_path(relative_path):
+    """ Get absolute path to resource, works for dev and for PyInstaller """
+    if hasattr(sys, '_MEIPASS'):
+        return os.path.join(sys._MEIPASS, relative_path)
+    return os.path.join(os.path.abspath("."), relative_path)
 
 class IBMiDashboard(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("IBM i Native Ecosystem Dashboard")
-        self.setWindowIcon(QIcon("logo.png"))
+        self.setWindowIcon(QIcon(resource_path("logo.png")))
         self.resize(1750, 950)
 
         self.is_monitoring = False
