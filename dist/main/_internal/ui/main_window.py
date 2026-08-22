@@ -18,7 +18,7 @@ from worker import WorkerThread
 from ui.log_viewer import LogViewerWidget
 from ui.widgets import RefreshStatusWidget, StatusBadgesWidget, SubsystemGridWidget
 from dialogs import LparSettingsDialog
-from config import SERVER_CONFIGS
+from config import SERVER_CONFIGS, EXPECTED_SUBSYSTEMS, save_all_configs
 
 
 def is_vpn_connected(target_ip="189.88.18.66"):
@@ -119,8 +119,6 @@ class SubsystemDetailDialog(QDialog):
         self.exec()
 
     def populate_subsystem_details(self):
-        from config import EXPECTED_SUBSYSTEMS
-        
         expected_list = EXPECTED_SUBSYSTEMS.get(self.server_name, [])
         active_dict = {}
 
@@ -245,11 +243,11 @@ class LparCardWidget(QFrame):
         self.current_subsystems_data = []
         
         self.setMinimumWidth(320)
-        self.setFixedHeight(330)
+        self.setFixedHeight(350)
         self.setFrameShape(QFrame.Shape.StyledPanel)
         
         self.main_layout = QVBoxLayout(self)
-        self.main_layout.setSpacing(2)
+        self.main_layout.setSpacing(4)
 
         header_layout = QHBoxLayout()
         self.name_label = QLabel(server_name)
@@ -391,6 +389,11 @@ class LparCardWidget(QFrame):
         if ports:
             badges_widget = StatusBadgesWidget(ports)
             self.ports_layout.addWidget(badges_widget)
+        else:
+            no_ports_lbl = QLabel("No monitored services")
+            no_ports_lbl.setFont(QFont("Segoe UI", 8))
+            no_ports_lbl.setStyleSheet("color: #6e7681; font-style: italic; background-color: transparent;")
+            self.ports_layout.addWidget(no_ports_lbl)
 
 
 class GlobalAlertsWidget(QGroupBox):
@@ -528,7 +531,6 @@ class IBMiDashboard(QMainWindow):
         self.pass_input.setFixedWidth(120)
         cred_layout.addWidget(self.pass_input)
 
-        # Edit Connections Button
         self.settings_btn = QPushButton("⚙️ Edit Connections")
         self.settings_btn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         self.settings_btn.setStyleSheet("""
@@ -637,7 +639,14 @@ class IBMiDashboard(QMainWindow):
         dialog = LparSettingsDialog(self.active_server_configs, self)
         if dialog.exec():
             self.active_server_configs = dialog.configs
+            
+            SERVER_CONFIGS.clear()
+            SERVER_CONFIGS.update(self.active_server_configs)
+
+            save_all_configs(SERVER_CONFIGS, EXPECTED_SUBSYSTEMS)
+
             self.rebuild_server_cards()
+            self.log_viewer_widget.load_log_history()
 
     def rebuild_server_cards(self):
         while self.cards_grid.count():
