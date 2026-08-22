@@ -3,7 +3,6 @@ import subprocess
 import sys
 import os
 
-# Add project root directory to sys.path so 'worker' can be imported
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from PyQt6.QtCore import Qt, QTimer
@@ -18,6 +17,8 @@ from PyQt6.QtWidgets import (
 from worker import WorkerThread
 from ui.log_viewer import LogViewerWidget
 from ui.widgets import RefreshStatusWidget, StatusBadgesWidget, SubsystemGridWidget
+from dialogs import LparSettingsDialog
+from config import SERVER_CONFIGS
 
 
 def is_vpn_connected(target_ip="189.88.18.66"):
@@ -65,7 +66,6 @@ class SubsystemDetailDialog(QDialog):
         layout.setContentsMargins(16, 16, 16, 16)
         layout.setSpacing(12)
 
-        # Header Title
         title_str = f"{server_name} Detailed Subsystem Status"
         if timestamp_str:
             title_str += f" ({timestamp_str})"
@@ -74,14 +74,12 @@ class SubsystemDetailDialog(QDialog):
         title_lbl.setStyleSheet("color: #ffffff; background-color: transparent;")
         layout.addWidget(title_lbl)
 
-        # 5-Column Table View
         self.table = QTableWidget()
         self.table.setColumnCount(5)
         self.table.setHorizontalHeaderLabels([
             "Subsystem Description ▲", "Status", "Current Active Jobs", "Library", "Text Description"
         ])
         
-        # Make cells read-only
         self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         
         header = self.table.horizontalHeader()
@@ -103,7 +101,6 @@ class SubsystemDetailDialog(QDialog):
         layout.addWidget(self.table)
 
     def show_centered(self):
-        """Always centers the modal directly relative to the main window or active screen."""
         if self.parent():
             top_level = self.parent().window()
             parent_geo = top_level.geometry()
@@ -127,7 +124,6 @@ class SubsystemDetailDialog(QDialog):
         expected_list = EXPECTED_SUBSYSTEMS.get(self.server_name, [])
         active_dict = {}
 
-        # Map active subsystems
         for sub in self.subsystem_data:
             if isinstance(sub, dict):
                 s_name = sub.get("name", "").upper()
@@ -138,13 +134,11 @@ class SubsystemDetailDialog(QDialog):
 
         all_display_rows = []
         
-        # 1. Process expected list to identify running vs missing
         for exp_name in expected_list:
             exp_upper = exp_name.upper()
             if exp_upper in active_dict:
                 all_display_rows.append(active_dict[exp_upper])
             else:
-                # Flag missing subsystem as INACTIVE
                 all_display_rows.append({
                     "name": exp_upper,
                     "status": "INACTIVE",
@@ -153,7 +147,6 @@ class SubsystemDetailDialog(QDialog):
                     "description": "Subsystem Stopped / Down"
                 })
 
-        # 2. Add extra active subsystems not explicitly in config
         for s_name, data in active_dict.items():
             if s_name not in [e.upper() for e in expected_list]:
                 all_display_rows.append(data)
@@ -180,7 +173,6 @@ class SubsystemDetailDialog(QDialog):
             items[1].setTextAlignment(Qt.AlignmentFlag.AlignCenter)
             items[2].setTextAlignment(Qt.AlignmentFlag.AlignCenter)
 
-            # Apply flags to disable editing per item and apply styling
             for col, item in enumerate(items):
                 item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
                 if is_inactive:
@@ -191,7 +183,6 @@ class SubsystemDetailDialog(QDialog):
 
 
 class LinearGauge(QWidget):
-    """Slim linear progress bar for CPU/ASP metrics."""
     def __init__(self, title, initial_value=0.0, parent=None):
         super().__init__(parent)
         layout = QVBoxLayout(self)
@@ -248,7 +239,6 @@ class LinearGauge(QWidget):
 
 
 class LparCardWidget(QFrame):
-    """Grid card representing a single LPAR system status."""
     def __init__(self, server_name, parent=None):
         super().__init__(parent)
         self.server_name = server_name
@@ -261,7 +251,6 @@ class LparCardWidget(QFrame):
         self.main_layout.setContentsMargins(10, 10, 10, 10)
         self.main_layout.setSpacing(6)
 
-        # Card Header
         header_layout = QHBoxLayout()
         self.name_label = QLabel(server_name)
         self.name_label.setFont(QFont("Segoe UI", 13, QFont.Weight.Bold))
@@ -276,7 +265,6 @@ class LparCardWidget(QFrame):
         header_layout.addWidget(self.status_badge)
         self.main_layout.addLayout(header_layout)
 
-        # CPU & ASP Gauges
         gauges_layout = QHBoxLayout()
         gauges_layout.setSpacing(12)
         self.cpu_gauge = LinearGauge("CPU")
@@ -285,7 +273,6 @@ class LparCardWidget(QFrame):
         gauges_layout.addWidget(self.asp_gauge, stretch=1)
         self.main_layout.addLayout(gauges_layout)
 
-        # Active Jobs Counter
         jobs_layout = QHBoxLayout()
         jobs_lbl = QLabel("Active Jobs")
         jobs_lbl.setFont(QFont("Segoe UI", 9, QFont.Weight.Bold))
@@ -299,7 +286,6 @@ class LparCardWidget(QFrame):
         jobs_layout.addWidget(self.jobs_val_label)
         self.main_layout.addLayout(jobs_layout)
 
-        # Subsystems Header Label
         sub_header = QHBoxLayout()
         sub_lbl = QLabel("Subsystems")
         sub_lbl.setFont(QFont("Segoe UI", 9, QFont.Weight.Bold))
@@ -308,13 +294,11 @@ class LparCardWidget(QFrame):
         sub_header.addStretch()
         self.main_layout.addLayout(sub_header)
 
-        # Subsystem Container Frame
         self.subsystem_container = QWidget()
         self.subsys_layout = QVBoxLayout(self.subsystem_container)
         self.subsys_layout.setContentsMargins(0, 0, 0, 0)
         self.main_layout.addWidget(self.subsystem_container)
 
-        # Network Services Label & Container
         net_lbl = QLabel("Network Services")
         net_lbl.setFont(QFont("Segoe UI", 9, QFont.Weight.Bold))
         net_lbl.setStyleSheet("color: #8b949e; margin-top: 2px; background-color: transparent;")
@@ -367,7 +351,6 @@ class LparCardWidget(QFrame):
 
         self.current_subsystems_data = data.get("subsystems", [])
 
-        # Critical threshold strictly ASP >= 90%
         is_critical = asp >= 90.0 or status == "AUTH_ERROR"
         self.set_card_style(is_critical=is_critical)
 
@@ -386,7 +369,6 @@ class LparCardWidget(QFrame):
         self.asp_gauge.set_value(asp)
         self.jobs_val_label.setText(f"{jobs:,}")
 
-        # Render Subsystems
         for i in reversed(range(self.subsys_layout.count())):
             w = self.subsys_layout.itemAt(i).widget()
             if w:
@@ -400,7 +382,6 @@ class LparCardWidget(QFrame):
         )
         self.subsys_layout.addWidget(sub_widget)
 
-        # Render Ports
         for i in reversed(range(self.ports_layout.count())):
             w = self.ports_layout.itemAt(i).widget()
             if w:
@@ -413,14 +394,12 @@ class LparCardWidget(QFrame):
 
 
 class GlobalAlertsWidget(QGroupBox):
-    """Top bar displaying overall ecosystem status metrics."""
     def __init__(self, parent=None):
         super().__init__("Global Alerts and Status", parent)
         layout = QHBoxLayout(self)
         layout.setContentsMargins(16, 10, 16, 10)
         layout.setSpacing(24)
 
-        # Total Down Services
         self.down_count_lbl = QLabel("0")
         self.down_count_lbl.setFont(QFont("Segoe UI", 16, QFont.Weight.Bold))
         self.down_count_lbl.setStyleSheet("color: #f85149; background-color: transparent;")
@@ -434,7 +413,6 @@ class GlobalAlertsWidget(QGroupBox):
         m1_layout.addWidget(down_desc)
         layout.addLayout(m1_layout)
 
-        # Overloaded LPARs
         self.overload_lbl = QLabel("0 Server Overloaded")
         self.overload_lbl.setFont(QFont("Segoe UI", 10, QFont.Weight.Bold))
         self.overload_lbl.setStyleSheet("color: #e3b341; background-color: transparent;")
@@ -447,7 +425,6 @@ class GlobalAlertsWidget(QGroupBox):
         m2_layout.addWidget(self.overload_lbl)
         layout.addLayout(m2_layout)
 
-        # Subsystem Overall Status
         self.sub_status_lbl = QLabel("All Subsystems Active")
         self.sub_status_lbl.setFont(QFont("Segoe UI", 10, QFont.Weight.Bold))
         self.sub_status_lbl.setStyleSheet("color: #3fb950; background-color: transparent;")
@@ -487,12 +464,12 @@ class GlobalAlertsWidget(QGroupBox):
 
         self.sub_status_lbl.setText(f"All Subsystems Active ({total_online}/{len(data_list)})")
 
-"""For Logo/Icon"""
+
 def resource_path(relative_path):
-    """ Get absolute path to resource, works for dev and for PyInstaller """
     if hasattr(sys, '_MEIPASS'):
         return os.path.join(sys._MEIPASS, relative_path)
     return os.path.join(os.path.abspath("."), relative_path)
+
 
 class IBMiDashboard(QMainWindow):
     def __init__(self):
@@ -503,6 +480,7 @@ class IBMiDashboard(QMainWindow):
 
         self.is_monitoring = False
         self.card_widgets = {}
+        self.active_server_configs = SERVER_CONFIGS.copy()
 
         self.tabs = QTabWidget()
         self.setCentralWidget(self.tabs)
@@ -549,6 +527,26 @@ class IBMiDashboard(QMainWindow):
         self.pass_input.setEchoMode(QLineEdit.EchoMode.Password)
         self.pass_input.setFixedWidth(120)
         cred_layout.addWidget(self.pass_input)
+
+        # Edit Connections Button
+        self.settings_btn = QPushButton("⚙️ Edit Connections")
+        self.settings_btn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.settings_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #21262d; 
+                color: #c9d1d9;
+                border: 1px solid #30363d; 
+                font-weight: bold; 
+                padding: 6px 10px;
+                border-radius: 6px;
+            }
+            QPushButton:hover { 
+                background-color: #30363d; 
+                color: #ffffff;
+            }
+        """)
+        self.settings_btn.clicked.connect(self.open_lpar_settings)
+        cred_layout.addWidget(self.settings_btn)
 
         self.start_btn = QPushButton("▶ Start Auto-Refresh")
         self.start_btn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
@@ -630,8 +628,24 @@ class IBMiDashboard(QMainWindow):
         self.cards_grid.setSpacing(10)
         self.cards_grid.setContentsMargins(2, 2, 2, 2)
 
-        from config import SERVER_CONFIGS
-        servers = list(SERVER_CONFIGS.keys())
+        self.rebuild_server_cards()
+
+        scroll_area.setWidget(scroll_content)
+        main_layout.addWidget(scroll_area, stretch=1)
+
+    def open_lpar_settings(self):
+        dialog = LparSettingsDialog(self.active_server_configs, self)
+        if dialog.exec():
+            self.active_server_configs = dialog.configs
+            self.rebuild_server_cards()
+
+    def rebuild_server_cards(self):
+        for srv_name, card in list(self.card_widgets.items()):
+            card.setParent(None)
+        self.card_widgets.clear()
+
+        # Sorted alphabetically by LPAR name
+        servers = sorted(self.active_server_configs.keys())
         cols = 4
 
         for idx, srv in enumerate(servers):
@@ -643,9 +657,6 @@ class IBMiDashboard(QMainWindow):
 
         for c in range(cols):
             self.cards_grid.setColumnStretch(c, 1)
-
-        scroll_area.setWidget(scroll_content)
-        main_layout.addWidget(scroll_area, stretch=1)
 
     def start_monitoring(self):
         username = self.user_input.text().strip()
@@ -659,6 +670,7 @@ class IBMiDashboard(QMainWindow):
         self.is_monitoring = True
         self.user_input.setEnabled(False)
         self.pass_input.setEnabled(False)
+        self.settings_btn.setEnabled(False)
         
         self.start_btn.setEnabled(False)
         self.start_btn.setText("▶ Running...")
@@ -674,6 +686,7 @@ class IBMiDashboard(QMainWindow):
 
         self.user_input.setEnabled(True)
         self.pass_input.setEnabled(True)
+        self.settings_btn.setEnabled(True)
         
         self.start_btn.setEnabled(True)
         self.start_btn.setText("▶ Start Auto-Refresh")
@@ -694,7 +707,6 @@ class IBMiDashboard(QMainWindow):
         if not is_vpn_connected(vpn_ip):
             self.stop_monitoring()
 
-            # Reset all health cards to OFFLINE
             for srv_name, card in self.card_widgets.items():
                 card.update_data({
                     "server": srv_name,
@@ -706,7 +718,6 @@ class IBMiDashboard(QMainWindow):
                     "ports": []
                 })
 
-            # Reset global status counters
             self.global_alerts.update_summary([])
 
             self.status_label.setText("⚠️ Please check your VPN connection. Unable to reach the gateway.")
@@ -725,7 +736,7 @@ class IBMiDashboard(QMainWindow):
         self.status_label.setText("Status: Authenticating & fetching metrics concurrently...")
         self.status_label.setStyleSheet("color: #8b949e; font-size: 11px; background-color: transparent;")
 
-        self.thread = WorkerThread(username, password)
+        self.thread = WorkerThread(username, password, server_configs=self.active_server_configs)
         self.thread.data_fetched.connect(self.update_cards)
         self.thread.start()
 

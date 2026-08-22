@@ -1,5 +1,3 @@
-# worker.py
-
 import os
 import sys
 import json
@@ -46,13 +44,15 @@ def cleanup_old_logs(days_to_keep=30):
                 print(f"Error parsing/deleting {filename}: {e}")
 
 
-def save_metrics_to_log(results):
+def save_metrics_to_log(results, server_configs=None):
     """Appends fetched LPAR ODBC metrics to a daily JSON file inside the 'logs' folder."""
     logs_dir = get_logs_dir()
     now = datetime.now()
     date_str = now.strftime("%Y-%m-%d")
     timestamp_str = now.strftime("%Y-%m-%d %H:%M:%S")
     filepath = os.path.join(logs_dir, f"lpar_history_{date_str}.json")
+
+    configs = server_configs or SERVER_CONFIGS
 
     formatted_records = []
     for sys_info in results:
@@ -62,7 +62,9 @@ def save_metrics_to_log(results):
 
         services_down_val = down_services if down_services else "None"
         server_name = sys_info.get("server")
-        ip_addr = SERVER_CONFIGS.get(server_name, {}).get("host", "N/A")
+        
+        cfg = configs.get(server_name, {})
+        ip_addr = cfg.get("host", "N/A") if isinstance(cfg, dict) else str(cfg)
 
         formatted_records.append({
             "timestamp": timestamp_str,
@@ -101,28 +103,31 @@ def save_metrics_to_log(results):
     except Exception as e:
         print(f"Failed to write log file: {e}")
 
-    # Auto-clean logs older than 30 days inside 'logs' folder
     cleanup_old_logs(days_to_keep=30)
 
 
 class WorkerThread(QThread):
     data_fetched = pyqtSignal(list)
 
-    def __init__(self, username, password):
+    def __init__(self, username, password, server_configs=None):
         super().__init__()
         self.username = username
         self.password = password
+        self.server_configs = server_configs or SERVER_CONFIGS
 
     def fetch_single_server(self, server, cfg):
         conn = None
+        host = cfg.get("host", "") if isinstance(cfg, dict) else str(cfg)
+        db = cfg.get("db", "*LOCAL") if isinstance(cfg, dict) else "*LOCAL"
+
         try:
             conn = pyodbc.connect(
                 f"DRIVER={{IBM i Access ODBC Driver}};"
-                f"SYSTEM={cfg['host']};"
+                f"SYSTEM={host};"
                 f"UID={self.username};"
                 f"PWD={self.password};"
                 f"SSL=0;"
-                f"DATABASE={cfg['db']};"
+                f"DATABASE={db};"
                 f"CONN_TIMEOUT=3;"
                 f"QUERY_TIMEOUT=3;",
                 timeout=3,
@@ -262,10 +267,10 @@ class WorkerThread(QThread):
 
     def run(self):
         results = []
-        with ThreadPoolExecutor(max_workers=len(SERVER_CONFIGS)) as executor:
+        with ThreadPoolExecutor(max_workers=max(1, len(self.server_configs))) as executor:
             future_to_server = {
                 executor.submit(self.fetch_single_server, server, cfg): server
-                for server, cfg in SERVER_CONFIGS.items()
+                for server, cfg in self.server_configs.items()
             }
             for future in as_completed(future_to_server):
                 try:
@@ -283,8 +288,8 @@ class WorkerThread(QThread):
                         "ports": []
                     })
 
-        order = list(SERVER_CONFIGS.keys())
+        order = list(self.server_configs.keys())
         results.sort(key=lambda x: order.index(x["server"]) if x["server"] in order else 99)
 
-        save_metrics_to_log(results)
+        save_metrics_to_log(results, self.server_configs)
         self.data_fetched.emit(results)
