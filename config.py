@@ -1,0 +1,96 @@
+
+SERVER_CONFIGS = {
+    "JDAD01": {"host": "192.168.50.130", "db": "I805175W"},
+    "JDAP01": {"host": "192.168.53.30", "db": "C805175W"},
+    "JDAP02": {"host": "192.168.50.30", "db": "RRGJDAP02"},
+    "JDAP03": {"host": "192.168.52.30", "db": "RRGJDAP03"},
+    "JDAP04": {"host": "192.168.54.30", "db": "RRGJDAP04"},
+    "JDAP05": {"host": "192.168.55.30", "db": "RRGJDAP05"},
+    "JDAP06": {"host": "192.168.56.30", "db": "RRGJDAP06"},
+    "JDAP07": {"host": "192.168.51.30", "db": "SEAWOLF"},
+}
+
+EXPECTED_SUBSYSTEMS = {
+    "JDAP01": [
+        "AIRSBS_RSC", "BCH_RSC", "INT_RSC", "INT_RSCRF", "INT_RSCWMS", "INT_ZZZ", 
+        "QBATCH", "QCMN", "QCTL", "QHTTPSVR", "QINTER", "QSERVER", "QSNADS", "QSPL", 
+        "QSYSWRK", "QUSRWRK", "Q1ABRMNET"
+    ],
+    "JDAP02": [
+        "AIRSBS_RDS", "BCH_RDS", "BCH_RSS", "INT_INV", "INT_RDS", "INT_RSS", "INT_ZZZ", 
+        "QBATCH", "QCMN", "QCTL", "QHTTPSVR", "QINTER", "QSERVER", "QSNADS", "QSPL", 
+        "QSYSWRK", "QUSRWRK", "Q1ABRMNET"
+    ],
+    "JDAP03": [
+        "AIRSBS_PLC", "AIRSBS_RHI", "AIRSBS_RTV", "BCH_PLC", "BCH_RBI", "BCH_RHI", 
+        "BCH_RLS", "BCH_RTV", "INT_PLC", "INT_RHI", "INT_RTV", "INT_ZZZ", "QBATCH", 
+        "QCMN", "QCTL", "QHTTPSVR", "QINTER", "QSERVER", "QSNADS", "QSPL", "QSYSWRK", 
+        "QUSRWRK", "Q1ABRMNET"
+    ],
+    "JDAP04": [
+        "AIRSBS_DJP", "AIRSBS_RAC", "AIRSBS_S50", "BCH_DJP", "BCH_RAC", "BCH_SVR", 
+        "BCH_S50", "INT_DJP", "INT_RAC", "INT_ZZZ", "QBATCH", "QCMN", "QCTL", "QHTTPSVR", 
+        "QINTER", "QSERVER", "QSNADS", "QSPL", "QSYSWRK", "QUSRWRK", "Q1ABRMNET"
+    ],
+    "JDAP05": [
+        "AIRSBS_MNS", "BCH_MNS", "INT_MNS", "INT_ZZZ", "QBATCH", "QCMN", "QCTL", 
+        "QHTTPSVR", "QINTER", "QSERVER", "QSNADS", "QSPL", "QSYSWRK", "QUSRWRK", "Q1ABRMNET"
+    ],
+    "JDAP06": [
+        "AIRSBS_SSD", "BCH_SSD", "INT_SSD", "INT_ZZZ", "QBATCH", "QCMN", "QCTL", 
+        "QHTTPSVR", "QINTER", "QSERVER", "QSNADS", "QSPL", "QSYSWRK", "QUSRWRK", "Q1ABRMNET"
+    ],
+    "JDAP07": [
+        "ITQINTER", "QBATCH", "QCMN", "QCTL", "QHTTPSVR", "QINTER", "QSERVER", 
+        "QSNADS", "QSPL", "QSYSWRK", "QUSRWRK", "Q1ABRMNET"
+    ],
+    "JDAD01": [
+        "AIRSBS_DJP", "AIRSBS_MNS", "AIRSBS_PLC", "AIRSBS_RAC", "AIRSBS_RDS", "AIRSBS_RHI", 
+        "AIRSBS_RSC", "AIRSBS_RTV", "AIRSBS_SSD", "BCH_DJP", "BCH_MNS", "BCH_PLC", 
+        "BCH_RAC", "BCH_RDS", "BCH_RHI", "BCH_RPI", "BCH_RSC", "BCH_RTV", "BCH_SVR", 
+        "BCH_S50", "INT_DJP", "INT_INV", "INT_MNS", "INT_PLC", "INT_RAC", "INT_RDS", 
+        "INT_RHI", "INT_RSC", "INT_RTV", "INT_SVR", "INT_S50", "INT_ZZZ", "QBATCH", 
+        "QCMN", "QCTL", "QHTTPSVR", "QINTER", "QSERVER", "QSNADS", "QSPL", "QSYSWRK", 
+        "QUSRWRK", "Q1ABRMNET"
+    ]
+}
+
+MONITORED_PORTS = {
+    21: "FTP",
+    22: "SSH",
+    23: "TELNET",
+    25: "SMTP",
+    445: "NetServer",
+    992: "TLS",
+    2001: "HTTP ADMIN1",
+    2002: "HTTP ADMIN2",
+    31111: "Netman",
+    31114: "JobManager",
+}
+
+SERVICE_COMMANDS = {
+    21: "STRTCPSVR SERVER(*FTP)",
+    22: "STRTCPSVR SERVER(*SSHD)",
+    23: "STRTCPSVR SERVER(*TELNET)",
+    25: "STRTCPSVR SERVER(*SMTP)",
+    445: "STRTCPSVR SERVER(*NETS)",
+    992: "STRTCPSVR SERVER(*ALL)",
+    2001: "STRTCPSVR SERVER(*HTTP)",
+    2002: "STRTCPSVR SERVER(*HTTP)",
+    31111: "STRNETMAN",
+    31114: "STRNETMAN",
+}
+
+SUBSYSTEM_COMMANDS = {
+    "QBATCH": "STRSBS SBSD(QBATCH)",
+    "QINTER": "STRSBS SBSD(QINTER)",
+    "QCMN": "STRSBS SBSD(QCMN)",
+    "QCTL": "STRSBS SBSD(QCTL)",
+    "QHTTPSVR": "STRTCPSVR SERVER(*HTTP)",
+    "QSERVER": "STRSBS SBSD(QSERVER)",
+    "QSNADS": "STRSBS SBSD(QSNADS)",
+    "QSPL": "STRSBS SBSD(QSPL)",
+    "QSYSWRK": "STRSBS SBSD(QSYSWRK)",
+    "QUSRWRK": "STRSBS SBSD(QUSRWRK)",
+    "Q1ABRMNET": "STRSBS SBSD(Q1ABRMNET)",
+}
