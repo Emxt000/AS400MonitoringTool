@@ -158,11 +158,9 @@ class ItemDetailDialog(QDialog):
         dialog_w = self.width()
         dialog_h = self.height()
 
-        # Target placement centered relative to cursor
         x = cursor_pos.x() - (dialog_w // 2)
         y = cursor_pos.y() - (dialog_h // 2)
 
-        # Clamp positions within screen borders (10px margin)
         margin = 10
         x = max(screen_geo.left() + margin, min(x, screen_geo.right() - dialog_w - margin))
         y = max(screen_geo.top() + margin, min(y, screen_geo.bottom() - dialog_h - margin))
@@ -247,7 +245,6 @@ class SubsystemGridWidget(QWidget):
         self.on_expand_callback = on_expand_callback
         self.expected_subs = EXPECTED_SUBSYSTEMS.get(server_name, [])
 
-        # Safely extract subsystem names if active_subsystems contains dictionaries
         names = [
             sub["name"] if isinstance(sub, dict) else sub
             for sub in active_subsystems
@@ -336,7 +333,6 @@ class ServiceBadge(QLabel):
         self.setFixedHeight(22)
         self.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
 
-        # Rich text tooltip for hover details
         port_str = f" (Port {self.port_num})" if self.port_num else ""
         tooltip_html = (
             f"<b>Service:</b> {self.name}{port_str}<br>"
@@ -401,7 +397,8 @@ class StatusBadgesWidget(QWidget):
             row = idx // cols
             col = idx % cols
             
-            badge = ServiceBadge(port, parent=self)
+            # FIX: Pass parent=None when creating badges so layout insertion handles hierarchy safely
+            badge = ServiceBadge(port, parent=None)
             layout.addWidget(badge, row, col)
             
         for c in range(cols):
