@@ -10,9 +10,10 @@ from config import SERVER_CONFIGS, MONITORED_PORTS, EXPECTED_PORTS
 
 
 def get_logs_dir():
-    """Returns absolute path to 'logs' directory relative to script or PyInstaller .exe."""
+    """Returns absolute path to 'logs' directory in LocalAppData when frozen, or local script path when running raw."""
     if getattr(sys, 'frozen', False):
-        base_dir = os.path.dirname(sys.executable)
+        # Redirect log directory to %LOCALAPPDATA%\IBMi_Dashboard\logs to avoid Program Files permissions errors
+        base_dir = os.path.join(os.environ.get("LOCALAPPDATA", os.path.expanduser("~")), "IBMi_Dashboard")
     else:
         base_dir = os.path.dirname(os.path.abspath(__file__))
         
