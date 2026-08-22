@@ -244,12 +244,12 @@ class LparCardWidget(QFrame):
         self.server_name = server_name
         self.current_subsystems_data = []
         
-        self.setMinimumWidth(340)
+        self.setMinimumWidth(320)
+        self.setFixedHeight(330)
         self.setFrameShape(QFrame.Shape.StyledPanel)
         
         self.main_layout = QVBoxLayout(self)
-        self.main_layout.setContentsMargins(10, 10, 10, 10)
-        self.main_layout.setSpacing(6)
+        self.main_layout.setSpacing(2)
 
         header_layout = QHBoxLayout()
         self.name_label = QLabel(server_name)
@@ -480,7 +480,7 @@ class IBMiDashboard(QMainWindow):
 
         self.is_monitoring = False
         self.card_widgets = {}
-        self.active_server_configs = SERVER_CONFIGS.copy()
+        self.active_server_configs = dict(SERVER_CONFIGS)
 
         self.tabs = QTabWidget()
         self.setCentralWidget(self.tabs)
@@ -640,20 +640,32 @@ class IBMiDashboard(QMainWindow):
             self.rebuild_server_cards()
 
     def rebuild_server_cards(self):
-        for srv_name, card in list(self.card_widgets.items()):
-            card.setParent(None)
+        while self.cards_grid.count():
+            item = self.cards_grid.takeAt(0)
+            if item and item.widget():
+                item.widget().setParent(None)
+
         self.card_widgets.clear()
 
-        # Sorted alphabetically by LPAR name
+        if not self.active_server_configs and SERVER_CONFIGS:
+            self.active_server_configs = dict(SERVER_CONFIGS)
+
         servers = sorted(self.active_server_configs.keys())
         cols = 4
+
+        if not servers:
+            empty_lbl = QLabel("No LPAR connections found. Click '⚙️ Edit Connections' to configure servers.")
+            empty_lbl.setFont(QFont("Segoe UI", 11))
+            empty_lbl.setStyleSheet("color: #8b949e; margin: 20px; background-color: transparent;")
+            self.cards_grid.addWidget(empty_lbl, 0, 0)
+            return
 
         for idx, srv in enumerate(servers):
             row = idx // cols
             col = idx % cols
             card = LparCardWidget(srv)
             self.card_widgets[srv] = card
-            self.cards_grid.addWidget(card, row, col)
+            self.cards_grid.addWidget(card, row, col, Qt.AlignmentFlag.AlignTop)
 
         for c in range(cols):
             self.cards_grid.setColumnStretch(c, 1)

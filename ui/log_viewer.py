@@ -35,11 +35,17 @@ class LogViewerWidget(QWidget):
         "12AM", "1AM", "2AM", "3AM", "4AM", "5AM", "6AM", "7AM", "8AM", "9AM", "10AM", "11AM",
         "12PM", "1PM", "2PM", "3PM", "4PM", "5PM", "6PM", "7PM", "8PM", "9PM", "10PM", "11PM"
     ]
-    LPARS = ["JDAD01", "JDAP01", "JDAP02", "JDAP03", "JDAP04", "JDAP05", "JDAP06", "JDAP07"]
+
+    def _make_font(self, family="Segoe UI", point_size=9, weight=QFont.Weight.Normal):
+        font = QFont(family)
+        font.setPointSize(point_size)
+        font.setWeight(weight)
+        return font
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.log_data_store = {}
+        self.active_lpars = []
 
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(16, 16, 16, 16)
@@ -63,6 +69,19 @@ class LogViewerWidget(QWidget):
             QScrollBar::handle:vertical:hover {
                 background: #8b949e;
             }
+            QScrollBar:horizontal {
+                background: #0d1117;
+                height: 10px;
+                margin: 0px;
+            }
+            QScrollBar::handle:horizontal {
+                background: #30363d;
+                min-width: 20px;
+                border-radius: 5px;
+            }
+            QScrollBar::handle:horizontal:hover {
+                background: #8b949e;
+            }
         """)
 
         container = QWidget()
@@ -71,22 +90,22 @@ class LogViewerWidget(QWidget):
         self.container_layout.setContentsMargins(0, 0, 0, 0)
         self.container_layout.setSpacing(16)
 
+        # Header Bar
         header_bar = QHBoxLayout()
         self.title_label = QLabel("IBM i LPAR Daily Summary")
-        self.title_label.setFont(QFont("Segoe UI", 14, QFont.Weight.Bold))
+        self.title_label.setFont(self._make_font("Segoe UI", 14, QFont.Weight.Bold))
         self.title_label.setStyleSheet("color: #ffffff;")
         header_bar.addWidget(self.title_label)
 
         header_bar.addStretch()
 
-        # Last Refresh Timestamp Indicator
         self.last_refresh_label = QLabel("Last updated: Never")
-        self.last_refresh_label.setFont(QFont("Segoe UI", 9, QFont.Weight.Normal))
+        self.last_refresh_label.setFont(self._make_font("Segoe UI", 9, QFont.Weight.Normal))
         self.last_refresh_label.setStyleSheet("color: #8b949e; margin-right: 8px;")
         header_bar.addWidget(self.last_refresh_label)
 
         date_lbl = QLabel("Select Date:")
-        date_lbl.setFont(QFont("Segoe UI", 10, QFont.Weight.Bold))
+        date_lbl.setFont(self._make_font("Segoe UI", 10, QFont.Weight.Bold))
         date_lbl.setStyleSheet("color: #8b949e;")
         header_bar.addWidget(date_lbl)
 
@@ -117,14 +136,20 @@ class LogViewerWidget(QWidget):
 
         self.container_layout.addLayout(header_bar)
 
+        # -------------------------------------------------------------
+        # VERTICAL STACKED LAYOUT
+        # 1. ASP Usage Section
+        # -------------------------------------------------------------
         self.container_layout.addWidget(self._create_section_header("ASP Usage"))
         self.asp_table = self._build_matrix_table()
         self.container_layout.addWidget(self.asp_table)
 
+        # 2. CPU Usage Section
         self.container_layout.addWidget(self._create_section_header("CPU Usage"))
         self.cpu_table = self._build_matrix_table()
         self.container_layout.addWidget(self.cpu_table)
 
+        # 3. Real-time Refresh Log Stream Section
         self.container_layout.addWidget(self._create_section_header("Real-time Refresh Log Stream"))
         self.stream_table = QTableWidget()
         self.stream_table.setColumnCount(8)
@@ -172,8 +197,8 @@ class LogViewerWidget(QWidget):
 
     def _create_section_header(self, text):
         lbl = QLabel(text)
-        lbl.setFont(QFont("Segoe UI", 11, QFont.Weight.Bold))
-        lbl.setStyleSheet("color: #ffffff; margin-top: 10px;")
+        lbl.setFont(self._make_font("Segoe UI", 11, QFont.Weight.Bold))
+        lbl.setStyleSheet("color: #ffffff; margin-top: 10px; border: none; background: transparent;")
         return lbl
 
     def _build_matrix_table(self):
@@ -183,14 +208,16 @@ class LogViewerWidget(QWidget):
         table.setHorizontalHeaderLabels(headers)
         table.verticalHeader().hide()
         table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
-        
+        table.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+
         header = table.horizontalHeader()
+        # Stretch all columns proportionally across the container width
         header.setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        # Lock LPAR and ACTION column sizes so hourly columns scale smoothly
         header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
         header.setSectionResizeMode(len(self.HOURS) + 1, QHeaderView.ResizeMode.Fixed)
-        table.setColumnWidth(len(self.HOURS) + 1, 100)  
-        
-        table.setFixedHeight(300)
+        table.setColumnWidth(len(self.HOURS) + 1, 65)  
+
         self._apply_table_styling(table)
         return table
 
@@ -209,18 +236,39 @@ class LogViewerWidget(QWidget):
             QHeaderView::section {
                 background-color: #0d1117;
                 color: #8b949e;
-                padding: 4px;
+                padding: 2px 0px;
                 font-weight: bold;
-                font-size: 11px;
+                font-size: 10px;
                 border: none;
                 border-bottom: 1px solid #30363d;
             }
             QTableWidget::item {
                 border-bottom: 1px solid #21262d;
+                padding: 0px;
+                font-size: 11px;
             }
         """)
 
-    def load_log_history(self):
+    def _update_table_heights(self):
+        """Calculates dynamic height for matrix tables based on active LPAR count."""
+        row_count = len(self.active_lpars)
+        header_height = 28
+        row_height = 32
+        border_padding = 16  # Extra space to accommodate horizontal scrollbar smoothly
+        
+        calculated_height = header_height + (row_count * row_height) + border_padding
+        dynamic_height = max(80, min(calculated_height, 380))
+
+        self.asp_table.setFixedHeight(dynamic_height)
+        self.cpu_table.setFixedHeight(dynamic_height)
+
+    def load_log_history(self, active_server_configs=None):
+        if active_server_configs is not None:
+            self.active_lpars = sorted(list(active_server_configs.keys()))
+        else:
+            from config import SERVER_CONFIGS
+            self.active_lpars = sorted(list(SERVER_CONFIGS.keys()))
+
         current_selection = self.date_combo.currentText()
         self.log_data_store = {}
         
@@ -285,8 +333,16 @@ class LogViewerWidget(QWidget):
 
         self.title_label.setText(f"IBM i LPAR Daily Summary ({selected_date})")
 
-        asp_matrix = {lpar: ["N/A%"] * 24 for lpar in self.LPARS}
-        cpu_matrix = {lpar: ["N/A%"] * 24 for lpar in self.LPARS}
+        self._update_table_heights()
+
+        if not self.active_lpars:
+            self.asp_table.setRowCount(0)
+            self.cpu_table.setRowCount(0)
+            self.stream_table.setRowCount(0)
+            return
+
+        asp_matrix = {lpar: ["N/A%"] * 24 for lpar in self.active_lpars}
+        cpu_matrix = {lpar: ["N/A%"] * 24 for lpar in self.active_lpars}
 
         day_batches = self.log_data_store.get(selected_date, [])
 
@@ -315,10 +371,10 @@ class LogViewerWidget(QWidget):
         self._fill_stream_table(day_batches)
 
     def _fill_matrix(self, table, matrix_data):
-        table.setRowCount(len(self.LPARS))
-        for row, lpar in enumerate(self.LPARS):
+        table.setRowCount(len(self.active_lpars))
+        for row, lpar in enumerate(self.active_lpars):
             lpar_item = QTableWidgetItem(lpar)
-            lpar_item.setFont(QFont("Segoe UI", 9, QFont.Weight.Bold))
+            lpar_item.setFont(self._make_font("Segoe UI", 9, QFont.Weight.Bold))
             lpar_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
             table.setItem(row, 0, lpar_item)
 
@@ -375,7 +431,7 @@ class LogViewerWidget(QWidget):
 
     def _fill_stream_table(self, day_batches):
         flat_records = []
-        lpar_order = {lpar: i for i, lpar in enumerate(self.LPARS)}
+        lpar_order = {lpar: i for i, lpar in enumerate(self.active_lpars)}
 
         for ts, records in reversed(day_batches):
             sorted_batch_records = sorted(
@@ -383,7 +439,9 @@ class LogViewerWidget(QWidget):
                 key=lambda r: lpar_order.get(r.get("lpar", r.get("server", "")), 999)
             )
             for rec in sorted_batch_records:
-                flat_records.append((ts, rec))
+                lpar = rec.get("lpar", rec.get("server", ""))
+                if lpar in lpar_order:
+                    flat_records.append((ts, rec))
 
         self.stream_table.setRowCount(len(flat_records))
 
@@ -449,7 +507,7 @@ class LogViewerWidget(QWidget):
         item.setTextAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignHCenter)
         item.setForeground(QColor(color))
         if bold:
-            item.setFont(QFont("Segoe UI", 9, QFont.Weight.Bold))
+            item.setFont(self._make_font("Segoe UI", 9, QFont.Weight.Bold))
         return item
 
     def export_to_excel(self):
@@ -605,7 +663,7 @@ class LogViewerWidget(QWidget):
 
         layout = QVBoxLayout(dialog)
         lbl = QLabel(f"Subsystems status on {lpar_name}:")
-        lbl.setFont(QFont("Segoe UI", 10, QFont.Weight.Bold))
+        lbl.setFont(self._make_font("Segoe UI", 10, QFont.Weight.Bold))
         lbl.setStyleSheet("color: #ffffff; margin-bottom: 8px;")
         layout.addWidget(lbl)
 
