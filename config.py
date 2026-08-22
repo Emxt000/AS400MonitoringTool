@@ -1,59 +1,69 @@
+import os
+import sys
+import json
 
-SERVER_CONFIGS = {
-    "JDAD01": {"host": "192.168.50.130", "db": "I805175W"},
-    "JDAP01": {"host": "192.168.53.30", "db": "C805175W"},
-    "JDAP02": {"host": "192.168.50.30", "db": "RRGJDAP02"},
-    "JDAP03": {"host": "192.168.52.30", "db": "RRGJDAP03"},
-    "JDAP04": {"host": "192.168.54.30", "db": "RRGJDAP04"},
-    "JDAP05": {"host": "192.168.55.30", "db": "RRGJDAP05"},
-    "JDAP06": {"host": "192.168.56.30", "db": "RRGJDAP06"},
-    "JDAP07": {"host": "192.168.51.30", "db": "SEAWOLF"},
+def get_config_path():
+    """Returns absolute path to 'config.json' in the application base directory."""
+    if getattr(sys, 'frozen', False):
+        base_dir = os.path.dirname(sys.executable)
+    else:
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+    return os.path.join(base_dir, "config.json")
+
+# Default values used as fallback or initial setup
+DEFAULT_SERVER_CONFIGS = {
 }
 
-EXPECTED_SUBSYSTEMS = {
-    "JDAP01": [
-        "AIRSBS_RSC", "BCH_RSC", "INT_RSC", "INT_RSCRF", "INT_RSCWMS", "INT_ZZZ", 
-        "QBATCH", "QCMN", "QCTL", "QHTTPSVR", "QINTER", "QSERVER", "QSNADS", "QSPL", 
-        "QSYSWRK", "QUSRWRK", "Q1ABRMNET"
-    ],
-    "JDAP02": [
-        "AIRSBS_RDS", "BCH_RDS", "BCH_RSS", "INT_INV", "INT_RDS", "INT_RSS", "INT_ZZZ", 
-        "QBATCH", "QCMN", "QCTL", "QHTTPSVR", "QINTER", "QSERVER", "QSNADS", "QSPL", 
-        "QSYSWRK", "QUSRWRK", "Q1ABRMNET"
-    ],
-    "JDAP03": [
-        "AIRSBS_PLC", "AIRSBS_RHI", "AIRSBS_RTV", "BCH_PLC", "BCH_RBI", "BCH_RHI", 
-        "BCH_RLS", "BCH_RTV", "INT_PLC", "INT_RHI", "INT_RTV", "INT_ZZZ", "QBATCH", 
-        "QCMN", "QCTL", "QHTTPSVR", "QINTER", "QSERVER", "QSNADS", "QSPL", "QSYSWRK", 
-        "QUSRWRK", "Q1ABRMNET"
-    ],
-    "JDAP04": [
-        "AIRSBS_DJP", "AIRSBS_RAC", "AIRSBS_S50", "BCH_DJP", "BCH_RAC", "BCH_SVR", 
-        "BCH_S50", "INT_DJP", "INT_RAC", "INT_ZZZ", "QBATCH", "QCMN", "QCTL", "QHTTPSVR", 
-        "QINTER", "QSERVER", "QSNADS", "QSPL", "QSYSWRK", "QUSRWRK", "Q1ABRMNET"
-    ],
-    "JDAP05": [
-        "AIRSBS_MNS", "BCH_MNS", "INT_MNS", "INT_ZZZ", "QBATCH", "QCMN", "QCTL", 
-        "QHTTPSVR", "QINTER", "QSERVER", "QSNADS", "QSPL", "QSYSWRK", "QUSRWRK", "Q1ABRMNET"
-    ],
-    "JDAP06": [
-        "AIRSBS_SSD", "BCH_SSD", "INT_SSD", "INT_ZZZ", "QBATCH", "QCMN", "QCTL", 
-        "QHTTPSVR", "QINTER", "QSERVER", "QSNADS", "QSPL", "QSYSWRK", "QUSRWRK", "Q1ABRMNET"
-    ],
-    "JDAP07": [
-        "ITQINTER", "QBATCH", "QCMN", "QCTL", "QHTTPSVR", "QINTER", "QSERVER", 
-        "QSNADS", "QSPL", "QSYSWRK", "QUSRWRK", "Q1ABRMNET"
-    ],
-    "JDAD01": [
-        "AIRSBS_DJP", "AIRSBS_MNS", "AIRSBS_PLC", "AIRSBS_RAC", "AIRSBS_RDS", "AIRSBS_RHI", 
-        "AIRSBS_RSC", "AIRSBS_RTV", "AIRSBS_SSD", "BCH_DJP", "BCH_MNS", "BCH_PLC", 
-        "BCH_RAC", "BCH_RDS", "BCH_RHI", "BCH_RPI", "BCH_RSC", "BCH_RTV", "BCH_SVR", 
-        "BCH_S50", "INT_DJP", "INT_INV", "INT_MNS", "INT_PLC", "INT_RAC", "INT_RDS", 
-        "INT_RHI", "INT_RSC", "INT_RTV", "INT_SVR", "INT_S50", "INT_ZZZ", "QBATCH", 
-        "QCMN", "QCTL", "QHTTPSVR", "QINTER", "QSERVER", "QSNADS", "QSPL", "QSYSWRK", 
-        "QUSRWRK", "Q1ABRMNET"
-    ]
+DEFAULT_EXPECTED_SUBSYSTEMS = {
+    
 }
+
+def load_server_configs():
+    """Loads server configurations from config.json or returns default."""
+    config_path = get_config_path()
+    if os.path.exists(config_path):
+        try:
+            with open(config_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                return data.get("SERVER_CONFIGS", DEFAULT_SERVER_CONFIGS)
+        except Exception as e:
+            print(f"Error loading config.json: {e}")
+    return DEFAULT_SERVER_CONFIGS.copy()
+
+def load_expected_subsystems():
+    """Loads expected subsystems from config.json or returns default."""
+    config_path = get_config_path()
+    if os.path.exists(config_path):
+        try:
+            with open(config_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                return data.get("EXPECTED_SUBSYSTEMS", DEFAULT_EXPECTED_SUBSYSTEMS)
+        except Exception as e:
+            print(f"Error loading config.json: {e}")
+    return DEFAULT_EXPECTED_SUBSYSTEMS.copy()
+
+def save_all_configs(server_configs, expected_subsystems=None):
+    """Saves updated SERVER_CONFIGS and EXPECTED_SUBSYSTEMS directly to config.json."""
+    config_path = get_config_path()
+    if expected_subsystems is None:
+        expected_subsystems = load_expected_subsystems()
+
+    data = {
+        "SERVER_CONFIGS": server_configs,
+        "EXPECTED_SUBSYSTEMS": expected_subsystems
+    }
+
+    try:
+        with open(config_path, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=4)
+        return True
+    except Exception as e:
+        print(f"Error writing to config.json: {e}")
+        return False
+
+# Initialize module-level dictionaries dynamically
+SERVER_CONFIGS = load_server_configs()
+EXPECTED_SUBSYSTEMS = load_expected_subsystems()
 
 MONITORED_PORTS = {
     21: "FTP",

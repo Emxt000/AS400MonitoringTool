@@ -5,15 +5,15 @@ from PyQt6.QtWidgets import (
     QLineEdit, QPushButton, QTextEdit, QComboBox,
     QTableWidget, QTableWidgetItem, QHeaderView
 )
-from config import SERVER_CONFIGS
+from config import SERVER_CONFIGS, EXPECTED_SUBSYSTEMS
 
 
 class LparSettingsDialog(QDialog):
-    """Modal dialog allowing users to dynamically configure LPAR IPs and Database names."""
+    """Modal dialog allowing users to dynamically configure LPAR IPs, Database names, and Expected Subsystems."""
     def __init__(self, current_configs, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("Configure LPAR Connections & Databases")
-        self.resize(600, 380)
+        self.setWindowTitle("Configure LPAR Connections & Expected Subsystems")
+        self.resize(800, 400)
         self.configs = current_configs.copy()
 
         self.setStyleSheet("""
@@ -51,14 +51,22 @@ class LparSettingsDialog(QDialog):
 
         layout = QVBoxLayout(self)
 
-        lbl = QLabel("Manage Server Connections (IP Address / Host & Database Name):")
+        lbl = QLabel("Manage Server Connections & Expected Subsystems:")
         layout.addWidget(lbl)
 
-        # Table View: Server Name, IP / Host, Database Name
+        # Table View: Server Name, IP / Host, Database Name, Expected Subsystems
         self.table = QTableWidget()
-        self.table.setColumnCount(3)
-        self.table.setHorizontalHeaderLabels(["Server Name", "IP / Hostname", "Database Name"])
-        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        self.table.setColumnCount(4)
+        self.table.setHorizontalHeaderLabels([
+            "Server Name", "IP / Hostname", "Database Name", "Expected Subsystems (Comma Separated)"
+        ])
+        
+        header = self.table.horizontalHeader()
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Interactive)
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Interactive)
+        header.setSectionResizeMode(2, QHeaderView.ResizeMode.Interactive)
+        header.setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
+        
         self.table.verticalHeader().setVisible(False)
         
         self.populate_table()
@@ -84,13 +92,17 @@ class LparSettingsDialog(QDialog):
 
     def populate_table(self):
         self.table.setRowCount(len(self.configs))
-        for row, (srv_name, cfg) in enumerate(self.configs.items()):
+        for row, (srv_name, cfg) in enumerate(sorted(self.configs.items())):
             host = cfg.get("host", "") if isinstance(cfg, dict) else str(cfg)
             db = cfg.get("db", "*LOCAL") if isinstance(cfg, dict) else "*LOCAL"
+
+            subsystems = EXPECTED_SUBSYSTEMS.get(srv_name, [])
+            subsystems_str = ", ".join(subsystems)
 
             self.table.setItem(row, 0, QTableWidgetItem(srv_name))
             self.table.setItem(row, 1, QTableWidgetItem(host))
             self.table.setItem(row, 2, QTableWidgetItem(db))
+            self.table.setItem(row, 3, QTableWidgetItem(subsystems_str))
 
     def add_row(self):
         row = self.table.rowCount()
@@ -98,6 +110,7 @@ class LparSettingsDialog(QDialog):
         self.table.setItem(row, 0, QTableWidgetItem(f"LPAR0{row + 1}"))
         self.table.setItem(row, 1, QTableWidgetItem("192.168.1.1"))
         self.table.setItem(row, 2, QTableWidgetItem("*LOCAL"))
+        self.table.setItem(row, 3, QTableWidgetItem("QINTER, QBATCH, QSERVER, QSYSWRK"))
 
     def remove_row(self):
         current_row = self.table.currentRow()
@@ -106,22 +119,34 @@ class LparSettingsDialog(QDialog):
 
     def save_and_close(self):
         new_configs = {}
+        new_subsystems = {}
+
         for row in range(self.table.rowCount()):
             srv_item = self.table.item(row, 0)
             host_item = self.table.item(row, 1)
             db_item = self.table.item(row, 2)
+            sub_item = self.table.item(row, 3)
 
             if srv_item and host_item and srv_item.text().strip():
                 srv_name = srv_item.text().strip().upper()
                 host_val = host_item.text().strip()
                 db_val = db_item.text().strip() if db_item and db_item.text().strip() else "*LOCAL"
 
+                sub_text = sub_item.text().strip() if sub_item else ""
+                parsed_subsystems = [s.strip().upper() for s in sub_text.split(",") if s.strip()]
+
                 new_configs[srv_name] = {
                     "host": host_val,
                     "db": db_val
                 }
+                new_subsystems[srv_name] = parsed_subsystems
 
         self.configs = new_configs
+
+        # Update runtime reference
+        EXPECTED_SUBSYSTEMS.clear()
+        EXPECTED_SUBSYSTEMS.update(new_subsystems)
+
         self.accept()
 
 

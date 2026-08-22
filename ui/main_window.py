@@ -18,7 +18,7 @@ from worker import WorkerThread
 from ui.log_viewer import LogViewerWidget
 from ui.widgets import RefreshStatusWidget, StatusBadgesWidget, SubsystemGridWidget
 from dialogs import LparSettingsDialog
-from config import SERVER_CONFIGS
+from config import SERVER_CONFIGS, EXPECTED_SUBSYSTEMS, save_all_configs
 
 
 def is_vpn_connected(target_ip="189.88.18.66"):
@@ -119,8 +119,6 @@ class SubsystemDetailDialog(QDialog):
         self.exec()
 
     def populate_subsystem_details(self):
-        from config import EXPECTED_SUBSYSTEMS
-        
         expected_list = EXPECTED_SUBSYSTEMS.get(self.server_name, [])
         active_dict = {}
 
@@ -637,7 +635,17 @@ class IBMiDashboard(QMainWindow):
         dialog = LparSettingsDialog(self.active_server_configs, self)
         if dialog.exec():
             self.active_server_configs = dialog.configs
+            
+            # Sync global config reference
+            SERVER_CONFIGS.clear()
+            SERVER_CONFIGS.update(self.active_server_configs)
+
+            # Save both SERVER_CONFIGS and EXPECTED_SUBSYSTEMS to config.json
+            save_all_configs(SERVER_CONFIGS, EXPECTED_SUBSYSTEMS)
+
+            # Rebuild grid UI and reload history
             self.rebuild_server_cards()
+            self.log_viewer_widget.load_log_history()
 
     def rebuild_server_cards(self):
         while self.cards_grid.count():
