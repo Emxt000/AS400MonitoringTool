@@ -4,6 +4,7 @@ import os
 import sys
 import json
 import csv
+import ast
 import datetime
 from PyQt6.QtCore import Qt, QTimer, QFileSystemWatcher
 from PyQt6.QtGui import QColor, QFont, QCursor
@@ -211,9 +212,7 @@ class LogViewerWidget(QWidget):
         table.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
 
         header = table.horizontalHeader()
-        # Stretch all columns proportionally across the container width
         header.setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
-        # Lock LPAR and ACTION column sizes so hourly columns scale smoothly
         header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
         header.setSectionResizeMode(len(self.HOURS) + 1, QHeaderView.ResizeMode.Fixed)
         table.setColumnWidth(len(self.HOURS) + 1, 65)  
@@ -254,7 +253,7 @@ class LogViewerWidget(QWidget):
         row_count = len(self.active_lpars)
         header_height = 28
         row_height = 32
-        border_padding = 16  # Extra space to accommodate horizontal scrollbar smoothly
+        border_padding = 16  
         
         calculated_height = header_height + (row_count * row_height) + border_padding
         dynamic_height = max(80, min(calculated_height, 380))
@@ -499,7 +498,7 @@ class LogViewerWidget(QWidget):
             badge_layout.addWidget(status_badge)
             self.stream_table.setCellWidget(row, 6, badge_container)
 
-            down_str = ", ".join(down) if isinstance(down, list) else str(down)
+            down_str = self._format_subsystems_list(down)
             self.stream_table.setItem(row, 7, self._table_item(down_str or "None"))
 
     def _table_item(self, text, bold=False, color="#c9d1d9"):
@@ -509,6 +508,37 @@ class LogViewerWidget(QWidget):
         if bold:
             item.setFont(self._make_font("Segoe UI", 9, QFont.Weight.Bold))
         return item
+
+    def _format_subsystems_list(self, subs_list):
+        """Safely formats lists containing either strings, dicts, or stringified dicts."""
+        if not subs_list:
+            return "None"
+        if isinstance(subs_list, str):
+            return subs_list
+
+        formatted_names = []
+        for sub in subs_list:
+            if isinstance(sub, dict):
+                sub_name = sub.get("name") or sub.get("subsystem") or sub.get("service") or str(sub)
+                formatted_names.append(str(sub_name))
+            elif isinstance(sub, str):
+                s_str = sub.strip()
+                if s_str.startswith("{") and s_str.endswith("}"):
+                    try:
+                        parsed = ast.literal_eval(s_str)
+                        if isinstance(parsed, dict):
+                            sub_name = parsed.get("name") or parsed.get("subsystem") or str(parsed)
+                            formatted_names.append(str(sub_name))
+                        else:
+                            formatted_names.append(s_str)
+                    except Exception:
+                        formatted_names.append(s_str)
+                else:
+                    formatted_names.append(s_str)
+            else:
+                formatted_names.append(str(sub))
+
+        return ", ".join(formatted_names) if formatted_names else "None"
 
     def export_to_excel(self):
         selected_date = self.date_combo.currentText() or datetime.date.today().strftime("%Y-%m-%d")
@@ -583,7 +613,7 @@ class LogViewerWidget(QWidget):
                         btn = widget.findChild(QPushButton)
                         if btn and hasattr(btn, "subs_detail"):
                             subs_list = btn.subs_detail
-                    row_data.append(", ".join(subs_list) if subs_list else "None")
+                    row_data.append(self._format_subsystems_list(subs_list))
                     continue
 
                 item = self.stream_table.item(r, c)
@@ -637,7 +667,7 @@ class LogViewerWidget(QWidget):
                             btn = widget.findChild(QPushButton)
                             if btn and hasattr(btn, "subs_detail"):
                                 subs_list = btn.subs_detail
-                        row_data.append(", ".join(subs_list) if subs_list else "None")
+                        row_data.append(self._format_subsystems_list(subs_list))
                         continue
 
                     item = self.stream_table.item(r, c)
@@ -653,7 +683,6 @@ class LogViewerWidget(QWidget):
                 writer.writerow(row_data)
 
     def _show_subsystems_dialog(self, lpar_name, subsystems):
-        import ast
         from config import EXPECTED_SUBSYSTEMS
 
         dialog = QDialog(self)
