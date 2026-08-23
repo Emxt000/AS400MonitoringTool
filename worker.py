@@ -4,7 +4,7 @@ import json
 import re
 from datetime import datetime, timedelta
 import pyodbc
-from PyQt6.QtCore import QRunnable, QObject, pyqtSignal, QThreadPool
+from PyQt6.QtCore import QRunnable, QObject, pyqtSignal
 from config import SERVER_CONFIGS, MONITORED_PORTS, EXPECTED_PORTS
 
 
@@ -211,8 +211,7 @@ class SingleLparRunnable(QRunnable):
                     """
                     SELECT LOCAL_PORT 
                     FROM QSYS2.NETSTAT_INFO 
-                    WHERE TCP_STATE IN ('LISTEN', 'ESTABLISHED', '*UDP') 
-                       OR PROTOCOL = 'UDP'
+                    WHERE TCP_STATE IN ('LISTEN')
                     """
                 )
                 active_ports = {
