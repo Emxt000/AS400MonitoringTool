@@ -6,7 +6,6 @@ import json
 import csv
 import ast
 import datetime
-import platform
 from PyQt6.QtCore import Qt, QTimer, QFileSystemWatcher
 from PyQt6.QtGui import QColor, QFont, QCursor
 from PyQt6.QtWidgets import (
@@ -18,14 +17,14 @@ from PyQt6.QtWidgets import (
 
 
 def get_logs_dir():
-    """Return the same per-user writable history directory used by the worker."""
-    if platform.system() == "Windows":
-        base_dir = os.environ.get("LOCALAPPDATA", os.path.expanduser("~"))
-    elif platform.system() == "Darwin":
-        base_dir = os.path.join(os.path.expanduser("~"), "Library", "Application Support")
+    """Returns absolute path to 'logs' directory relative to script or PyInstaller .exe."""
+    if getattr(sys, 'frozen', False):
+        base_dir = os.path.dirname(sys.executable)
     else:
-        base_dir = os.environ.get("XDG_DATA_HOME", os.path.join(os.path.expanduser("~"), ".local", "share"))
-    base_dir = os.path.join(base_dir, "IBMi_Dashboard")
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        if os.path.basename(base_dir) == "ui":
+            base_dir = os.path.dirname(base_dir)
+            
     logs_dir = os.path.join(base_dir, "logs")
     os.makedirs(logs_dir, exist_ok=True)
     return logs_dir

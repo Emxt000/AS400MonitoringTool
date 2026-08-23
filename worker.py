@@ -2,22 +2,19 @@ import os
 import sys
 import json
 import re
-import platform
 from datetime import datetime, timedelta
 import pyodbc
-from PyQt6.QtCore import QRunnable, QObject, pyqtSignal
+from PyQt6.QtCore import QRunnable, QObject, pyqtSignal, QThreadPool
 from config import SERVER_CONFIGS, MONITORED_PORTS, EXPECTED_PORTS
 
 
 def get_logs_dir():
-    """Return a per-user writable directory for history logs."""
-    if platform.system() == "Windows":
-        base_dir = os.environ.get("LOCALAPPDATA", os.path.expanduser("~"))
-    elif platform.system() == "Darwin":
-        base_dir = os.path.join(os.path.expanduser("~"), "Library", "Application Support")
+    """Returns absolute path to 'logs' directory in LocalAppData when frozen, or local script path when running raw."""
+    if getattr(sys, 'frozen', False):
+        base_dir = os.path.join(os.environ.get("LOCALAPPDATA", os.path.expanduser("~")), "IBMi_Dashboard")
     else:
-        base_dir = os.environ.get("XDG_DATA_HOME", os.path.join(os.path.expanduser("~"), ".local", "share"))
-    base_dir = os.path.join(base_dir, "IBMi_Dashboard")
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        
     logs_dir = os.path.join(base_dir, "logs")
     os.makedirs(logs_dir, exist_ok=True)
     return logs_dir
@@ -130,9 +127,8 @@ class SingleLparRunnable(QRunnable):
         db = self.cfg.get("db", "*LOCAL") if isinstance(self.cfg, dict) else "*LOCAL"
 
         try:
-            driver = self.cfg.get("driver", "IBM i Access ODBC Driver") if isinstance(self.cfg, dict) else "IBM i Access ODBC Driver"
             conn = pyodbc.connect(
-                f"DRIVER={{{driver}}};"
+                f"DRIVER={{IBM i Access ODBC Driver}};"
                 f"SYSTEM={host};"
                 f"UID={self.username};"
                 f"PWD={self.password};"
