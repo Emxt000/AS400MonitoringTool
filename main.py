@@ -30,18 +30,19 @@ from PyQt6.QtGui import QIcon
 from ui.styles import DARK_STYLESHEET
 import ui.main_window
 
-# Force Windows Taskbar to pin/show custom app icon
-myappid = 'ibmi.dashboard.ecosystem.1'
-try:
-    ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
-except Exception:
-    pass
+# Force the Windows taskbar to show the custom app icon.
+if sys.platform == "win32":
+    myappid = 'ibmi.dashboard.ecosystem.1'
+    try:
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
+    except Exception:
+        pass
 
 def resource_path(relative_path):
     """ Get absolute path to resource, works for dev and for PyInstaller """
     if hasattr(sys, '_MEIPASS'):
         return os.path.join(sys._MEIPASS, relative_path)
-    return os.path.join(os.path.abspath("."), relative_path)
+    return os.path.join(os.path.dirname(os.path.abspath(__file__)), relative_path)
 
 def main():
     app = QApplication(sys.argv)
